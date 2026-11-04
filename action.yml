@@ -1,0 +1,50 @@
+name: "Mainfast Migrations"
+description: "Fails a PR whose database migrations would fork the migration history once merged into main (Alembic, Django, Prisma, Rails, Flyway, Drizzle), and re-checks open PRs with a blocking commit status when main moves."
+author: "Mainfast authors"
+branding:
+  icon: "database"
+  color: "blue"
+inputs:
+  mode:
+    description: "auto (pull_request -> check, push -> recheck-open-prs), check, or recheck-open-prs"
+    default: auto
+  token:
+    description: Token for comments, labels and statuses. The workflow GITHUB_TOKEN is enough.
+    default: ${{ github.token }}
+  main-branch:
+    description: Branch PRs merge into. Defaults to the repository default branch.
+    default: ""
+  config:
+    description: Path to a config file to use instead of .mainfast.yml on main.
+    default: ""
+  comment:
+    description: Post (and later update) one PR comment when the PR's migrations conflict with main.
+    default: "true"
+  comment-author:
+    description: "Login the token posts comments as. Only a marker comment written by this login is ever updated, so a pasted marker cannot hijack the sticky comment. Default: the token's own user when it can read GET /user, else github-actions[bot]. Set <app-slug>[bot] for a GitHub App installation token."
+    default: ""
+  label:
+    description: 'Label for stale PRs. Defaults to migrations.label in .mainfast.yml, else "mainfast: migrations stale".'
+    default: ""
+  status:
+    description: "Set the blocking commit status (mainfast/migrations) on each PR head: failure when the PR's migrations conflict with main, success when clean. Only this status, required by branch protection, actually blocks a merge. Needs statuses: write. false turns it off."
+    default: "true"
+  fail-on:
+    description: "error, warning or never: when the check step itself fails (check mode)"
+    default: error
+  max-prs:
+    description: Most open PRs to re-check per push to main.
+    default: "50"
+  license:
+    description: "Mainfast licence key (Pro, or the optional free key): pass your MAINFAST_LICENSE secret. Optional and never needed for public repositories or private ones with up to 5 active contributors; no feature needs it. Checked once per run with Polar (only the key and the organisation id are sent; offline counts as valid). Without a Pro key a larger private repository gets one notice in the job summary; the result is never affected."
+    default: ""
+outputs:
+  ok:
+    description: "true when the merge keeps every migration history consistent (check mode)"
+  report:
+    description: Full report as JSON
+  stale-prs:
+    description: Comma-separated PR numbers found stale (recheck mode)
+runs:
+  using: node24
+  main: "dist/index.cjs"

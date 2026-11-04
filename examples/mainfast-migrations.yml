@@ -1,0 +1,33 @@
+# Copy to .github/workflows/mainfast-migrations.yml.
+#
+# pull_request:   checks this PR's migrations against the current main.
+# push to main:   re-checks every open PR, because main moving can make a clean PR stale.
+# Both set the commit status `mainfast/migrations` on the PR head (failure = stale, success = clean).
+# Only that status blocks a merge, and only once branch protection (or a ruleset) requires it:
+#   Settings > Branches > main > Require status checks > add "mainfast/migrations".
+name: Mainfast Migrations
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write # sticky comment + stale label on PRs
+  statuses: write # the blocking mainfast/migrations commit status
+
+concurrency:
+  group: mainfast-migrations-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0 # the merge-base must be reachable
+      - uses: mainfast/migrations@v0
+        # with:
+        #   status: false   # no commit status: comment + label only (then nothing blocks the merge)
+        #   license: ${{ secrets.MAINFAST_LICENSE }} # Pro: private repos with more than 5 active contributors
