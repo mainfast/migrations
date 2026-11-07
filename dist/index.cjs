@@ -7386,7 +7386,7 @@ var brand_default = {
     homepageUrl: "https://github.com/mainfast/mainfast",
     docsUrl: "https://github.com/mainfast/mainfast#readme",
     issuesUrl: "https://github.com/mainfast/mainfast/issues",
-    pricingUrl: "https://github.com/mainfast/mainfast#free-and-pro",
+    pricingUrl: "https://mainfast.dev/pricing",
     npmScope: "@mainfast",
     configFile: ".mainfast.yml",
     configFileAlt: ".mainfast.yaml",
@@ -7397,17 +7397,16 @@ var brand_default = {
       freeActiveContributors: 5,
       windowDays: 30,
       proPricePerContributorMonth: "$4",
-      _benefitIds: "Polar licence-key benefit id of each plan (sandbox until launch): a key whose benefit_id is `pro` is Mainfast Pro; `free` is the optional free key (registered user, not Pro). tools/dev-sites/polar.mjs --apply prints the sandbox ids.",
+      _benefitIds: "Polar licence-key benefit id of each plan: a key whose benefit_id is `pro` is Mainfast Pro; `free` is the optional free key (registered user, not Pro).",
       benefitIds: {
-        free: "77fcbd42-f163-444e-9931-c98610f8063f",
-        pro: "9f2bb2ac-6b53-4c17-9cae-a2e2eccfad32"
+        free: "656e762a-ec6e-4e94-b7fd-f7ff879061ca",
+        pro: "ea9b4fcb-3659-404e-bb62-9bec84fb119a"
       }
     },
     polar: {
-      _comment: "Licence keys are checked with Polar's public customer-portal endpoint POST {api}/v1/customer-portal/license-keys/validate {key, organization_id}: no merchant secret. Until launch `api`, organizationId and the benefit ids are the Polar SANDBOX ones (29 Oct 2026); at launch put production Polar and its ids here. While organizationId is all zeros no key is sent anywhere. apiEnv / orgEnv override both, e.g. the sandbox.",
-      api: "https://sandbox-api.polar.sh",
-      sandboxApi: "https://sandbox-api.polar.sh",
-      organizationId: "f450cee3-327c-452e-a949-2557a22a7692",
+      _comment: "Licence keys are checked with Polar's public customer-portal endpoint POST {api}/v1/customer-portal/license-keys/validate {key, organization_id}: no merchant secret. These are the live Polar values. While organizationId is all zeros no key is sent anywhere. apiEnv / orgEnv override both, e.g. the sandbox.",
+      api: "https://api.polar.sh",
+      organizationId: "3a0d763f-8fac-4df0-898a-a59eb60d3506",
       apiEnv: "MAINFAST_POLAR_API",
       orgEnv: "MAINFAST_POLAR_ORG",
       timeoutMs: 3e3
@@ -7424,11 +7423,7 @@ var brand_default = {
       checkName: "Mainfast Intact",
       commentMarker: "<!-- mainfast-intact:sticky -->",
       actionRef: "mainfast/intact@v0",
-      branding: { icon: "git-merge", color: "blue" },
-      plugin: {
-        name: "mainfast",
-        description: "Mainfast Intact: check merge commits for dropped main changes before you push."
-      }
+      branding: { icon: "git-merge", color: "blue" }
     },
     migrations: {
       productName: "Mainfast Migrations",
@@ -7641,7 +7636,7 @@ var DEFAULT_OUT_OF_ORDER = {
   flyway: "warning",
   drizzle: "error"
 };
-var KNOWN_KEYS = ["frameworks", "paths", "ignore", "outOfOrder", "label"];
+var KNOWN_KEYS = ["enabled", "frameworks", "paths", "ignore", "outOfOrder", "label"];
 var DEFAULT_CONFIG = {
   frameworks: "auto",
   paths: {},
@@ -7875,12 +7870,23 @@ function parseDjango(path, text, app) {
   };
 }
 var MIGRATION_FILE = /(^|\/)migrations\/\d{4}_[^/]+\.py$/;
-function appLabel(root) {
-  return basename(dirname(root)) || basename(root);
+var ANY_MIGRATION_FILE = /\/migrations\/[^_~/][^/]*\.py$|^migrations\/[^_~/][^/]*\.py$/;
+function appLabel(tree, root, files) {
+  const dir = basename(dirname(root)) || basename(root);
+  const config = /^[ \t]+label\s*=\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]/m.exec(tree.read(`${dirname(root)}/apps.py`) ?? "");
+  if (config) return config[1];
+  const parsed = files.map((f) => parseDjango(f, tree.read(f) ?? "", dir));
+  const names = new Set(parsed.map((m) => m.name));
+  const counts = /* @__PURE__ */ new Map();
+  for (const m of parsed)
+    for (const [label, name] of m.deps) if (names.has(name) && name < m.name) counts.set(label, (counts.get(label) ?? 0) + 1);
+  if (!counts.size || counts.has(dir)) return dir;
+  return [...counts].sort((a, b) => b[1] - a[1])[0][0];
 }
 function migrations(tree, root) {
-  const app = appLabel(root);
-  return tree.under(root).filter((f) => dirname(f) === root && MIGRATION_FILE.test(f)).map((f) => parseDjango(f, tree.read(f) ?? "", app));
+  const files = tree.under(root).filter((f) => dirname(f) === root && ANY_MIGRATION_FILE.test(f));
+  const app = appLabel(tree, root, files);
+  return files.map((f) => parseDjango(f, tree.read(f) ?? "", app));
 }
 var django = {
   id: "django",
@@ -7891,11 +7897,11 @@ var django = {
   },
   inspect(tree, root) {
     const migs = migrations(tree, root);
-    const app = appLabel(root);
+    const app = migs[0]?.app ?? basename(dirname(root));
     const findings = [];
-    const names = new Set(migs.map((m) => m.name));
+    const names = new Set(migs.flatMap((m) => [m.name, ...m.replaces.filter(([a]) => a === app).map(([, n]) => n)]));
     for (const [num, list4] of groupBy(migs, (m) => m.number)) {
-      if (list4.length > 1)
+      if (list4.length > 1 && /^\d{4}$/.test(num))
         findings.push({
           framework: "django",
           root,
@@ -8304,14 +8310,16 @@ function mergeBase(repo, a, b) {
   return tryGit(repo, ["merge-base", a, b]) || void 0;
 }
 var Tree = class _Tree {
-  constructor(repo, entries, label) {
+  constructor(repo, entries, label, readBlob = (sha) => git(repo, ["cat-file", "blob", sha])) {
     this.repo = repo;
     this.entries = entries;
     this.label = label;
+    this.readBlob = readBlob;
   }
   repo;
   entries;
   label;
+  readBlob;
   cache = /* @__PURE__ */ new Map();
   static atRef(repo, ref, label = ref) {
     const out = git(repo, ["ls-tree", "-r", "-z", "--full-tree", ref]);
@@ -8336,7 +8344,7 @@ var Tree = class _Tree {
     if ("content" in blob) return blob.content;
     let text = this.cache.get(blob.sha);
     if (text === void 0) {
-      text = git(this.repo, ["cat-file", "blob", blob.sha]);
+      text = this.readBlob(blob.sha, path);
       this.cache.set(blob.sha, text);
     }
     return text;
@@ -8374,7 +8382,7 @@ function mergedTree(base, main, head, dir, mergeFile) {
     if (!pick) continue;
     entries.set(p, "sha" in pick ? pick : { content: pick.content });
   }
-  const t = new Tree(main.repo, entries, `merge(${main.label}, ${head.label})`);
+  const t = new Tree(main.repo, entries, `merge(${main.label}, ${head.label})`, main.readBlob);
   return t;
 }
 
@@ -8459,6 +8467,10 @@ function analyze(opts) {
   const head = Tree.atRef(opts.repo, headSha, opts.headRef);
   const base = baseSha === mainSha ? main : Tree.atRef(opts.repo, baseSha, "merge-base");
   const config = opts.config ?? loadConfigFromRef(main);
+  return analyzeTrees({ main, head, base, mainRef: opts.mainRef, headRef: opts.headRef, mainSha, headSha, baseSha, config });
+}
+function analyzeTrees(opts) {
+  const { main, head, base, mainSha, headSha, baseSha, config } = opts;
   const roots = [];
   const findings = [];
   const preExisting = [];

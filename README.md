@@ -209,3 +209,7 @@ and the recheck tests push PR heads to a local bare "origin" as
 - `extends:` in `.mainfast.yml` is accepted but not applied yet (Intact only).
 - A content conflict inside one migration file is not this tool's job (Mainfast
   Intact covers what a merge dropped).
+
+## Report a problem
+
+Found a bug or a false positive? [Open an issue](https://github.com/mainfast/mainfast/issues) in the main Mainfast repository. Anyone can, free, with no key. Issues are public, so leave out private code and secrets.
