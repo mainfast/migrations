@@ -7387,6 +7387,8 @@ var brand_default = {
     docsUrl: "https://github.com/mainfast/mainfast#readme",
     issuesUrl: "https://github.com/mainfast/mainfast/issues",
     pricingUrl: "https://mainfast.dev/pricing",
+    appUrl: "https://github.com/apps/mainfast",
+    dashboardUrl: "https://app.mainfast.dev",
     npmScope: "@mainfast",
     configFile: ".mainfast.yml",
     configFileAlt: ".mainfast.yaml",
@@ -9086,7 +9088,8 @@ function planNotice(productName, active, freeKey = false) {
     `> This private repository had ${active} active contributors in the last ${p.windowDays} days (people who opened a pull request or pushed; bots excluded).`,
     `> ${SUITE.name} Pro is ${p.proPricePerContributorMonth} per active contributor per month: ${SUITE.pricingUrl}.`,
     ...freeKey ? [`> The key passed to this step is the free ${SUITE.name} key (registered, thank you); it does not cover Pro.`] : [],
-    `> With a key, save it as the \`${SUITE.licenseEnv}\` secret and pass \`license: \${{ secrets.${SUITE.licenseEnv} }}\` to the action.`,
+    `> If your organization has ${SUITE.name} Pro, you can remove this note: copy the ${SUITE.name} Pro key from your Polar account (or Polar's email), save it as the \`${SUITE.licenseEnv}\` secret and add \`license: \${{ secrets.${SUITE.licenseEnv} }}\` to this step.`,
+    `> Prefer no keys? Install the hosted ${SUITE.name} GitHub App (${SUITE.appUrl}) and buy Pro from its dashboard (${SUITE.dashboardUrl}). The App runs these checks for you with no key, and you can then delete this workflow.`,
     `> ${productName} ran in full and this notice never changes its result.`
   ].join("\n");
 }
