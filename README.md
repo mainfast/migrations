@@ -1,11 +1,12 @@
 # Mainfast Migrations
 
-Database migration guard for GitHub. Fails a pull request whose migrations would
-fork or reorder the migration history once the PR is merged into the **current**
-main, and re-checks every open PR when main moves, with a commit status that
-blocks the stale ones.
+Fails a pull request whose database migrations would fork or reorder the
+migration history once the PR is merged into the **current** main. When main
+moves, it re-checks every open PR and blocks the ones that went stale with a
+commit status.
 
-Licence: MIT; free for public repos and private repos with up to 5 active contributors ([Free and Pro](https://github.com/mainfast/mainfast/blob/main/README.md#free-and-pro)).
+Part of the [Mainfast suite](https://github.com/mainfast/mainfast/blob/main/README.md). MIT-licensed and free for public repositories and for
+private ones with up to 5 active contributors; see [Free and Pro](https://github.com/mainfast/mainfast/blob/main/README.md#free-and-pro).
 
 ## The problem
 
@@ -60,7 +61,9 @@ Examples, each with main having moved since the branch forked:
   longer main's. Fix: merge main, union the journal entries by tag, re-index
   `idx`, fix the branch snapshot's single `prevId`.
 
-## Install
+## Quick start
+
+Add this as `.github/workflows/mainfast-migrations.yml`:
 
 ```yaml
 # .github/workflows/mainfast-migrations.yml
@@ -82,7 +85,9 @@ jobs:
       - uses: mainfast/migrations@v0
 ```
 
-Full example with comments: [`examples/mainfast-migrations.yml`](examples/mainfast-migrations.yml).
+Then make the check blocking: after the first run, require the `mainfast/migrations` status in
+branch protection (see [What actually blocks a merge](#what-actually-blocks-a-merge)). Full example
+with comments: [`examples/mainfast-migrations.yml`](examples/mainfast-migrations.yml).
 Third-party actions are pinned to full commit SHAs.
 
 ### Permissions
@@ -90,15 +95,15 @@ Third-party actions are pinned to full commit SHAs.
 | Permission | Why | Without it |
 |---|---|---|
 | `contents: read` | fetch main and `refs/pull/<n>/head` | the check cannot run |
-| `pull-requests: write` | the sticky PR comment and the stale label (both go through the issues API, which accepts this permission for PRs); also lets the plan notice count PR authors | the comment and label are skipped with a warning; summary and annotations still carry the result |
+| `pull-requests: write` | the PR comment and the stale label (both go through the issues API, which accepts this permission for PRs); also lets the plan notice count PR authors | the comment and label are skipped with a warning; the job summary and annotations still show the result |
 | `statuses: write` | the `mainfast/migrations` commit status | no status, so nothing blocks the merge |
 
 On PRs from forks the token is read-only: the comment, label and status are
-skipped with a warning and the job summary still carries the result.
+skipped with a warning, and the job summary still shows the result.
 
 ## What actually blocks a merge
 
-The comment and the label tell people; **only the commit status blocks**, and
+The comment and the label only tell people. **Only the commit status blocks**, and
 only when branch protection (or a ruleset) requires it. After the first run,
 add `mainfast/migrations` under *Settings > Branches > main > Require status
 checks to pass* (or the ruleset equivalent).
@@ -112,7 +117,7 @@ checks to pass* (or the ruleset equivalent).
   (`GET /repos/{o}/{r}/pulls?state=open&base=main`), fetches every head in one
   `git fetch`, re-runs the check, and on every PR sets `mainfast/migrations`:
   **failure** on the ones that went stale (plus the comment and the label),
-  **success** on the clean ones (their label is removed and our comment is
+  **success** on the clean ones (their label is removed and the Mainfast comment is
   marked resolved). The push job itself does not fail; the statuses do the
   blocking. Output `stale-prs`.
 
@@ -123,14 +128,14 @@ next push re-runs the `pull_request` check and sets success.
 Inputs: `mode`, `token`, `main-branch`, `config`, `comment`, `comment-author`,
 `label`, `status`, `fail-on`, `max-prs`, `license` (see [`action.yml`](action.yml)).
 
-The sticky comment is matched only when it starts with the marker **and** was
+The PR comment is updated in place. It is matched only when it starts with the marker **and** was
 written by the token's own login (`GET /user`, else `github-actions[bot]`;
 override with `comment-author`, e.g. `<app-slug>[bot]` for an App token), so a
 marker pasted into someone else's comment is never edited or followed. Branch
 names, file and revision names and PR titles are escaped before they reach a
 comment or the job summary, and `@mentions` in them are neutralised.
 
-## Config
+## Configuration
 
 `.mainfast.yml`, section `migrations:`. It is read from **main** (the base) in
 both modes, so a PR cannot switch its own check off; a new setting takes effect
@@ -157,10 +162,11 @@ are graphs without a version order: their forks (`multiple-heads`,
 `multiple-leaves`) break `upgrade` / `migrate` outright and are always errors,
 so their `outOfOrder` entries (default `error`) currently change nothing.
 
-Autodetect: Alembic is a `versions/` dir with an `env.py` beside it (or scripts
-that declare `down_revision`); Django is any `migrations/NNNN_*.py` dir; the
-others go by file pattern. The app label for Django is the parent directory
-name.
+Autodetect: Alembic is a `versions/` directory with an `env.py` beside it (or
+scripts that declare `down_revision`); Django is any `migrations/NNNN_*.py`
+directory; the others go by file pattern. A Django app's label is the `label` in
+its `AppConfig` (`apps.py`), else the directory name, else the label its
+migrations' dependencies use.
 
 ## How it reads git
 
@@ -169,19 +175,11 @@ the working tree. Main is fetched to `refs/mainfast/main` and each PR head to
 `refs/mainfast/pr/<n>` from `refs/pull/<n>/head`. The merge-base must be
 reachable, so check out with `fetch-depth: 0`.
 
-## CLI
+## Run it locally
 
 ```sh
-npx mainfast-migrations check --main origin/main --head HEAD          # exit 1 on errors
-npx mainfast-migrations check --format md
-GITHUB_TOKEN=... npx mainfast-migrations recheck --github-repo owner/name   # --no-status, --no-comment
-```
-
-## Library
-
-```ts
-import { analyze, toMarkdown } from '@mainfast/migrations';
-const report = analyze({ repo: '.', mainRef: 'origin/main', headRef: 'HEAD' });
+npx mainfast audit migrations                 # this branch against main; needs main fetched, no token
+npx mainfast audit migrations --main origin/main
 ```
 
 ## Development
@@ -189,6 +187,19 @@ const report = analyze({ repo: '.', mainRef: 'origin/main', headRef: 'HEAD' });
 ```sh
 npm install                 # at the suite root (mainfast/)
 npm run all                 # here: typecheck, tests, build
+```
+
+The package's own CLI and library, from your build:
+
+```sh
+node dist/cli.cjs check --main origin/main --head HEAD          # exit 1 on errors
+node dist/cli.cjs check --format md
+GITHUB_TOKEN=... node dist/cli.cjs recheck --github-repo owner/name   # --no-status, --no-comment
+```
+
+```ts
+import { analyze, toMarkdown } from '@mainfast/migrations';
+const report = analyze({ repo: '.', mainRef: 'origin/main', headRef: 'HEAD' });
 ```
 
 Tests build real temporary git repos for each framework (`test/helpers.ts`),
@@ -199,17 +210,16 @@ and the recheck tests push PR heads to a local bare "origin" as
 
 ## Limits
 
-- Django app labels come from the directory name; a custom `AppConfig.label` is
-  not read. Cross-app dependencies are not validated.
+- Cross-app Django dependencies are not validated.
 - Alembic `depends_on` is ignored; with `branch_labels` present,
   `multiple-heads` drops to a warning.
 - Flyway repeatable (`R__`) and undo (`U`) migrations and Java migrations are
   ignored.
 - Rails `schema.rb` version and Prisma `migration_lock.toml` are not inspected.
-- `extends:` in `.mainfast.yml` is accepted but not applied yet (Intact only).
+- `extends:` in `.mainfast.yml` is accepted but not applied yet.
 - A content conflict inside one migration file is not this tool's job (Mainfast
   Intact covers what a merge dropped).
 
 ## Report a problem
 
-Found a bug or a false positive? [Open an issue](https://github.com/mainfast/mainfast/issues) in the main Mainfast repository. Anyone can, free, with no key. Issues are public, so leave out private code and secrets.
+Found a bug or a false positive? [Open an issue](https://github.com/mainfast/mainfast/issues) in the main Mainfast repository. You don't need a key or a paid plan. Issues are public, so leave out private code and secrets.
